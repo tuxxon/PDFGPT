@@ -104,5 +104,5 @@ $ docker compose up -d --build
 
 4. To stop PDFGPT:
 ```
-docker compose down
+$ docker compose down
 ```
