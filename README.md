@@ -73,6 +73,13 @@ PDFGPT utilizes a modern and robust technology stack to provide efficient PDF pr
 
 This stack ensures high performance, scalability, and ease of deployment, making PDFGPT a robust solution for PDF-based question answering. The combination of USE for text embedding and advanced LLMs for question answering provides a powerful foundation for understanding and processing document content.
 
+## API Documentation
+
+PDFGPT provides comprehensive API documentation using Swagger UI and ReDoc. After starting the application, you can access the API documentation at the following URLs:
+
+- Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
+- ReDoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
 
 ## How to Run
 
