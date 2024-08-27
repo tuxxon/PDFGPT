@@ -24,6 +24,8 @@ Key features:
 - Semantic search for pinpointing relevant content
 - AI-powered question answering using state-of-the-art language models
 - Intuitive web interface for seamless user interaction
+- Choice between two text embedding models: Universal Sentence Encoder (USE) and OpenAI's Ada v2 (ADA)
+- Bilingual answer generation: Option to receive answers in English or Korean
 
 PDFGPT is invaluable across various domains including research, education, legal, and information retrieval, where quick access to specific information within extensive documents is crucial.
 
