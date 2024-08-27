@@ -27,7 +27,7 @@ PDFGPT utilizes a modern and robust technology stack to provide efficient PDF pr
 
 ### Backend (Server)
 - **Framework**: FastAPI - A modern, fast (high-performance) web framework for building APIs with Python 3.7+ based on standard Python type hints.
-- **Language**: Python 3.9+
+- **Language**: Python 3.11+
 - **Key Libraries and Models**:
   - `tensorflow` and `tensorflow-hub` for machine learning and NLP tasks
   - **Universal Sentence Encoder** (Version 4) - A pre-trained model from TensorFlow Hub used for generating sentence embeddings. This model is crucial for:
