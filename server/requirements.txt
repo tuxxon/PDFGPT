@@ -7,4 +7,5 @@ scikit-learn==1.4.1.post1
 tensorflow==2.17.0
 tensorflow-hub==0.16.1
 PyMuPDF==1.24.9
+openai==1.42.0
 litellm==1.44.5

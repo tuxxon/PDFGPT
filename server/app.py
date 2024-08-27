@@ -5,35 +5,52 @@ import shutil
 import urllib.request
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from enum import Enum
+import logging
 
 import fitz
 import numpy as np
 import tensorflow_hub as hub
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from openai import OpenAI
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sklearn.neighbors import NearestNeighbors
 from litellm import completion
 
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 모든 오리진 허용. 실제 운영 환경에서는 구체적인 오리진을 지정하는 것이 좋습니다.
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # 모든 HTTP 메서드 허용
-    allow_headers=["*"],  # 모든 HTTP 헤더 허용
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Load the Universal Sentence Encoder
-EMBED = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
+logger.info("Loading Universal Sentence Encoder...")
+USE_MODEL = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
+logger.info("Universal Sentence Encoder loaded successfully.")
+
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+logger.info("OpenAI client initialized.")
+
+class EmbeddingModel(str, Enum):
+    USE = "use"
+    ADA = "ada"
 
 recommender = None
 
 def download_pdf(url, output_path):
+    logger.info(f"Downloading PDF from URL: {url}")
     urllib.request.urlretrieve(url, output_path)
+    logger.info(f"PDF downloaded and saved to: {output_path}")
 
 def preprocess(text):
     text = text.replace('\n', ' ')
@@ -41,6 +58,7 @@ def preprocess(text):
     return text
 
 def pdf_to_text(path, start_page=1, end_page=None):
+    logger.info(f"Converting PDF to text: {path}")
     doc = fitz.open(path)
     total_pages = doc.page_count
 
@@ -55,9 +73,11 @@ def pdf_to_text(path, start_page=1, end_page=None):
         text_list.append(text)
 
     doc.close()
+    logger.info(f"PDF converted to text successfully. Total pages processed: {end_page - start_page + 1}")
     return text_list
 
 def text_to_chunks(texts, word_length=150, start_page=1):
+    logger.info("Splitting text into chunks")
     text_toks = [t.split(' ') for t in texts]
     chunks = []
 
@@ -70,24 +90,30 @@ def text_to_chunks(texts, word_length=150, start_page=1):
             chunk = ' '.join(chunk).strip()
             chunk = f'[Page no. {idx+start_page}] "{chunk}"'
             chunks.append(chunk)
+    
+    logger.info(f"Text split into {len(chunks)} chunks")
     return chunks
 
 class SemanticSearch:
-    def __init__(self):
-        self.use = EMBED
+    def __init__(self, model: EmbeddingModel = EmbeddingModel.USE):
+        self.model = model
         self.fitted = False
+        logger.info(f"SemanticSearch initialized with model: {model}")
 
     def fit(self, data, batch=1000, n_neighbors=5):
+        logger.info("Fitting SemanticSearch model")
         self.data = data
         self.embeddings = self.get_text_embedding(data, batch=batch)
         n_neighbors = min(n_neighbors, len(self.embeddings))
         self.nn = NearestNeighbors(n_neighbors=n_neighbors)
         self.nn.fit(self.embeddings)
         self.fitted = True
+        logger.info("SemanticSearch model fitted successfully")
 
     def __call__(self, text, return_data=True):
-        inp_emb = self.use([text])
-        neighbors = self.nn.kneighbors(inp_emb, return_distance=False)[0]
+        logger.info("Performing semantic search")
+        inp_emb = self.get_text_embedding([text])[0]
+        neighbors = self.nn.kneighbors([inp_emb], return_distance=False)[0]
 
         if return_data:
             return [self.data[i] for i in neighbors]
@@ -95,25 +121,44 @@ class SemanticSearch:
             return neighbors
 
     def get_text_embedding(self, texts, batch=1000):
+        logger.info(f"Getting text embeddings using {self.model} model")
+        if self.model == EmbeddingModel.USE:
+            return self.get_use_embedding(texts, batch)
+        elif self.model == EmbeddingModel.ADA:
+            return self.get_ada_embedding(texts, batch)
+
+    def get_use_embedding(self, texts, batch=1000):
+        logger.info("Getting USE embeddings")
         embeddings = []
         for i in range(0, len(texts), batch):
             text_batch = texts[i : (i + batch)]
-            emb_batch = self.use(text_batch)
+            emb_batch = USE_MODEL(text_batch)
             embeddings.append(emb_batch)
-        embeddings = np.vstack(embeddings)
-        return embeddings
+        return np.vstack(embeddings)
 
-def load_recommender(path, start_page=1):
+    def get_ada_embedding(self, texts, batch=1000):
+        logger.info("Getting ADA embeddings")
+        embeddings = []
+        for i in range(0, len(texts), batch):
+            text_batch = texts[i : (i + batch)]
+            response = client.embeddings.create(input=text_batch, model="text-embedding-ada-002")
+            emb_batch = [item.embedding for item in response.data]
+            embeddings.extend(emb_batch)
+        return np.array(embeddings)
+
+def load_recommender(path, start_page=1, model: EmbeddingModel = EmbeddingModel.USE):
     global recommender
-    if recommender is None:
-        recommender = SemanticSearch()
+    logger.info(f"Loading recommender with model: {model}")
+    recommender = SemanticSearch(model)
 
     texts = pdf_to_text(path, start_page=start_page)
     chunks = text_to_chunks(texts, start_page=start_page)
     recommender.fit(chunks)
+    logger.info("Recommender loaded successfully")
     return 'Corpus Loaded.'
 
 def generate_answer(question, openAI_key):
+    logger.info("Generating answer")
     topn_chunks = recommender(question)
     prompt = "search results:\n\n"
     for c in topn_chunks:
@@ -132,62 +177,103 @@ def generate_answer(question, openAI_key):
     )
 
     try:
-        messages=[{"content": prompt, "role": "user"}]
-        completions = completion(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=messages,
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=512,
             n=1,
             stop=None,
-            temperature=0.7,
-            api_key=openAI_key
+            temperature=0.7
         )
-        answer = completions['choices'][0]['message']['content']
+        answer = response.choices[0].message.content
+        logger.info("Answer generated successfully")
     except Exception as e:
+        logger.error(f"Error generating answer: {str(e)}")
         answer = f'API Error: {str(e)}'
-    
+
     return answer
 
 @app.post("/upload_pdf")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    model: EmbeddingModel = Form(EmbeddingModel.USE)
+):
+    logger.info(f"Received PDF upload request. Filename: {file.filename}, Model: {model}")
     if not file.filename.endswith('.pdf'):
+        logger.warning(f"Invalid file format: {file.filename}")
         raise HTTPException(status_code=400, detail="Invalid file format. Please upload a PDF.")
-    
+
     file_path = os.path.join('uploads', file.filename)
-    with open(file_path, "wb") as buffer:
-        buffer.write(await file.read())
-    
-    load_recommender(file_path)
-    
-    return JSONResponse(content={"message": "PDF uploaded and processed successfully"}, status_code=200)
+    try:
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        logger.info(f"File saved successfully: {file_path}")
+    except Exception as e:
+        logger.error(f"Error saving file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error saving file: {str(e)}")
+
+    try:
+        logger.info(f"Processing PDF with {model} model")
+        load_recommender(file_path, model=model)
+        logger.info("PDF processed successfully")
+    except Exception as e:
+        logger.error(f"Error processing PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+
+    return JSONResponse(content={
+        "message": f"PDF uploaded and processed successfully using {model} model",
+        "model_used": model
+    }, status_code=200)
 
 @app.post("/upload_pdf_url")
-async def upload_pdf_url(url: str):
+async def upload_pdf_url(url: str, model: EmbeddingModel = EmbeddingModel.USE):
+    logger.info(f"Received PDF URL upload request. URL: {url}, Model: {model}")
     file_path = os.path.join('uploads', 'downloaded_pdf.pdf')
-    download_pdf(url, file_path)
-    
-    load_recommender(file_path)
-    
-    return JSONResponse(content={"message": "PDF downloaded from URL and processed successfully"}, status_code=200)
+    try:
+        download_pdf(url, file_path)
+    except Exception as e:
+        logger.error(f"Error downloading PDF: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error downloading PDF: {str(e)}")
+
+    try:
+        logger.info(f"Processing PDF with {model} model")
+        load_recommender(file_path, model=model)
+        logger.info("PDF processed successfully")
+    except Exception as e:
+        logger.error(f"Error processing PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+
+    return JSONResponse(content={
+        "message": f"PDF downloaded from URL and processed successfully using {model} model",
+        "model_used": model
+    }, status_code=200)
 
 class Question(BaseModel):
     question: str
 
 @app.post("/ask_question")
 async def ask_question(question: Question):
+    logger.info(f"Received question: {question.question}")
     if recommender is None:
+        logger.warning("No PDF has been uploaded and processed yet")
         raise HTTPException(status_code=400, detail="No PDF has been uploaded and processed yet")
-    
+
     openAI_key = os.environ.get("OPENAI_API_KEY")
     if not openAI_key:
+        logger.error("OpenAI API key not found in environment variables")
         raise HTTPException(status_code=400, detail="OpenAI API key not found in environment variables")
-    
+
     answer = generate_answer(question.question, openAI_key)
-    
-    return JSONResponse(content={"answer": answer}, status_code=200)
+    logger.info("Answer generated successfully")
+
+    return JSONResponse(content={
+        "answer": answer,
+        "model_used": recommender.model
+    }, status_code=200)
 
 if __name__ == '__main__':
     os.makedirs('uploads', exist_ok=True)
-
+    logger.info("Starting server...")
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
