@@ -8,6 +8,12 @@ The system processes uploaded PDFs, extracts text, and utilizes cutting-edge NLP
 
 This project was inspired by and aims to improve upon the functionality of [https://github.com/bhaskatripathi/pdfGPT](https://github.com/bhaskatripathi/pdfGPT). Due to operational issues with the original implementation, PDFGPT was developed as a more robust and reliable alternative, incorporating additional features and optimizations to enhance performance and user experience.
 
+## Screenshot
+
+Below is a screenshot of PDFGPT in action:
+
+![PDFGPT Screenshot](./screenshot/screenshot1.png)
+
 ## Purpose and Description
 
 PDFGPT is designed to revolutionize the way users interact with PDF documents. By allowing users to upload PDFs and ask questions about their content, PDFGPT eliminates the need for manual searching through lengthy documents. The system processes PDFs, extracts text, and utilizes cutting-edge NLP techniques to deliver accurate and context-aware answers to user queries.
