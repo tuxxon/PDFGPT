@@ -1,0 +1,10 @@
+python-dotenv==1.0.1
+fastapi==0.112.2
+uvicorn==0.30.6
+python-multipart==0.0.9
+numpy==1.26.4
+scikit-learn==1.4.1.post1
+tensorflow==2.17.0
+tensorflow-hub==0.16.1
+PyMuPDF==1.24.9
+litellm==1.44.5
