@@ -9,6 +9,7 @@ function App() {
   const [isUploading, setIsUploading] = useState(false);
   const [isAsking, setIsAsking] = useState(false);
   const [model, setModel] = useState('use');
+  const [language, setLanguage] = useState('english');
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -27,6 +28,10 @@ function App() {
 
   const handleModelChange = (event) => {
     setModel(event.target.value);
+  };
+
+  const handleLanguageChange = (event) => {
+    setLanguage(event.target.value);
   };
 
   const handleUpload = async () => {
@@ -79,7 +84,10 @@ function App() {
     setIsAsking(true);
 
     try {
-      const response = await axios.post('http://localhost:8000/ask_question', { question: input });
+      const response = await axios.post('http://localhost:8000/ask_question', 
+        { question: input },
+        { params: { language: language } }
+      );
       setMessages(messages => [...messages, { text: response.data.answer, sender: 'bot' }]);
     } catch (error) {
       console.error('Error asking question:', error);
@@ -123,7 +131,7 @@ function App() {
               background: message.sender === 'user' ? '#007bff' : '#28a745', 
               color: 'white', 
               padding: '8px 12px',
-              borderRadius: '20px',
+              borderRadius: '10px',
               display: 'inline-block',
               maxWidth: '70%',
               wordWrap: 'break-word'
@@ -135,14 +143,18 @@ function App() {
         <div ref={messagesEndRef} />
       </div>
       <form onSubmit={handleSubmit}>
+        <select value={language} onChange={handleLanguageChange} style={{ marginRight: '10px' }}>
+          <option value="english">English</option>
+          <option value="korean">한국어</option>
+        </select>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask a question..."
-          style={{ width: '70%', marginRight: '10px', padding: '5px' }}
+          style={{ width: '60%', marginRight: '10px', padding: '5px' }}
         />
-        <button type="submit" disabled={isAsking} style={{ width: '25%', padding: '5px' }}>
+        <button type="submit" disabled={isAsking} style={{ width: '20%', padding: '5px' }}>
           {isAsking ? 'Thinking...' : 'Ask'}
         </button>
       </form>

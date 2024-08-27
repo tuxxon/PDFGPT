@@ -12,12 +12,11 @@ import fitz
 import numpy as np
 import tensorflow_hub as hub
 from openai import OpenAI
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sklearn.neighbors import NearestNeighbors
-from litellm import completion
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -44,6 +43,10 @@ logger.info("OpenAI client initialized.")
 class EmbeddingModel(str, Enum):
     USE = "use"
     ADA = "ada"
+
+class Language(str, Enum):
+    ENGLISH = "english"
+    KOREAN = "korean"
 
 recommender = None
 
@@ -157,15 +160,17 @@ def load_recommender(path, start_page=1, model: EmbeddingModel = EmbeddingModel.
     logger.info("Recommender loaded successfully")
     return 'Corpus Loaded.'
 
-def generate_answer(question, openAI_key):
-    logger.info("Generating answer")
+def generate_answer(question, language, openAI_key):
+    logger.info(f"Generating answer in {language}")
     topn_chunks = recommender(question)
     prompt = "search results:\n\n"
     for c in topn_chunks:
         prompt += c + '\n\n'
 
+    language_instruction = "Answer in English" if language == Language.ENGLISH else "답변은 한국어로 작성해주세요"
+    
     prompt += (
-        "Instructions: Compose a comprehensive reply to the query using the search results given. "
+        f"Instructions: {language_instruction}. Compose a comprehensive reply to the query using the search results given. "
         "Cite each reference using [Page Number] notation (every result has this number at the beginning). "
         "Citation should be done at the end of each sentence. If the search results mention multiple subjects "
         "with the same name, create separate answers for each. Only include information found in the results and "
@@ -253,8 +258,11 @@ class Question(BaseModel):
     question: str
 
 @app.post("/ask_question")
-async def ask_question(question: Question):
-    logger.info(f"Received question: {question.question}")
+async def ask_question(
+    question: Question,
+    language: Language = Query(default=Language.ENGLISH, description="Select the language for the answer")
+):
+    logger.info(f"Received question: {question.question}, Language: {language}")
     if recommender is None:
         logger.warning("No PDF has been uploaded and processed yet")
         raise HTTPException(status_code=400, detail="No PDF has been uploaded and processed yet")
@@ -264,12 +272,13 @@ async def ask_question(question: Question):
         logger.error("OpenAI API key not found in environment variables")
         raise HTTPException(status_code=400, detail="OpenAI API key not found in environment variables")
 
-    answer = generate_answer(question.question, openAI_key)
+    answer = generate_answer(question.question, language, openAI_key)
     logger.info("Answer generated successfully")
 
     return JSONResponse(content={
         "answer": answer,
-        "model_used": recommender.model
+        "model_used": recommender.model,
+        "language": language
     }, status_code=200)
 
 if __name__ == '__main__':
